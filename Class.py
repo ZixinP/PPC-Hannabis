@@ -1,6 +1,8 @@
 import multiprocessing as mp
-import threading
+# import threading
 import sysv_ipc
+# import struct
+import signal
 
 class Game:
     color = ['red', 'blue', 'green', 'yellow', 'white'] 
@@ -38,22 +40,21 @@ class Game:
         for p in self.players:
             for i in range(0,5):
                 p.hand.append(self.draw_card())
-        return
+
         
     def draw_card(self,player,shared_memory):
         if len(shared_memory["cards"]) > 0:
             player.hand.append(shared_memory["cards"].pop())   
-            return
+ 
         else:
             self.feedback(player.id, "No more cards in the deck\n")
-            return
         
     # send message to player      
     def feedback(self, id, message):
         for p in self.players:
             if p.id == id:
                 p.socket.send(message.encode())    
-        return
+
     
     def update_game(self, shared_memory):
         shared_memory["tokens"] = self.tokens
@@ -61,7 +62,7 @@ class Game:
         shared_memory["discards"] = self.discards
         shared_memory["suits"] = self.suits
         shared_memory["cards"] = self.cards
-        return
+
     
     #check if game is over
     def check_end(self, shared_memory):
@@ -100,14 +101,14 @@ class Game:
         else: 
             shared_memory["fuses"] -= 1
             shared_memory["discards"].append(card)      
-            self.update_game    
+            self.update_game(shared_memory) 
              
         if playable:
             self.feedback(self.players[self.turn].id, "You successfully played a " + card.color + " " + str(card.number)+"\n")
             # if card is 5, add a token
             if card.number == 5:
                 self.tokens += 1
-                for p in self.player:
+                for p in self.players:
                     self.feedback(p.id, "Suit %s completed\n" % card.color)
                     self.feedback(p.id, "You received a token\n") 
             self.update_game(shared_memory)
@@ -131,34 +132,54 @@ class Game:
             shared_memory["cards"] = self.cards
             # collect all players' id
             list_players_id = [p.id for p in self.players]
-            shared_memory["players"] = list_players_id
+            shared_memory["players_id"] = list_players_id
             
-            processes = [mp.Process(target=p.play, args=(self, shared_memory)) for p in self.players]
+            processes = [mp.Process(target=p.play, args=(self, shared_memory,self.msg_queue)) for p in self.players]
             for p in processes:
                 p.start()
+            return shared_memory, processes
+    
+    
     
     # start the game        
     def start_game(self):
+        self.distribute_cards() 
+        shared_memory, processes = self.set_up_players()
+         
+        signal.signal(signal.SIGINT, self.signal_handler)
+        try:
+            while not self.signal:
+                with self.self_lock:
+                    self.feedback(self.players[self.turn].id, "Your turn\n")
+                    action = self.players[self.turn].socket.recv(1024).decode()
+                    
+                    if action == "PLAY CARD":
+                        card = self.players[self.turn].socket.recv(1024).decode()
+                        self.play_card(card, shared_memory)
+                    elif action == "GIVE INFORMATION":
+                        player_choice = self.players[self.turn].socket.recv(1024).decode()
+                        player_card = self.players[player_choice].hand
+                        self.players[self.turn].socket.send(player_card)
+                        self.feedback(self.players[player_choice].id, "RECEIVE INFORMATION")
+                    
+                    self.update_game(shared_memory)
+                    self.feedback(self.players[self.turn].id, "Your turn is over\n")         
+                    self.turn = (self.turn + 1) % len(self.players)   # next player's turn
+                    self.check_end()
+    
+            self.end_game()
+            for p in processes:
+                p.join()
         
-        self.distribute_cards()
-        while not self.signal:
-            with self.self_lock:
-                self.feedback(self.players[self.turn].id, "Your turn\n")
-                action = self.players[self.turn].socket.recv(1024).decode()
-                
-                if action[0] == "PLAY CARD":
-                    self.play_card(self.players[self.turn].hand[int(action[1])])
-                elif action[0] == "GIVE INFORMATION":
-                    self.give_info(self.players[self.turn], action[1])
-                   
-                self.update_player(self.players[self.turn])
-                self.feedback(self.players[self.turn].id, "Your turn is over\n")         
-                self.turn = (self.turn + 1) % len(self.players)   # next player's turn
-                self.check_end()
+        except KeyboardInterrupt:
+            print("Game interrupted")
+            signal_handler(siganl.SIGINT, None)
         
-        self.end_game()
-        
-
+        return
+    
+    def signal_handler(self, sig, frame):
+        self.signal = True
+        return
 
 
 
@@ -171,92 +192,101 @@ class Player:
         self.hand = []
         
     def play(self, game, shared_memory, msg_queue):
-        
         message = self.socket.recv(1024).decode()
-        while message != "Your turn\n":
-            print(message)
+        while message != "GAME OVER":   
+            while message != "Your turn\n":
+                while message != "RECEIVE INFORMATION":
+                    print(message)
+                
+                # when reveive notification from server to receive information from other player
+                info_card = msg_queue.receive(type = 1)
+                print(info_card)
+            
+            # when it is player's turn
+            game.self_lock.acquire()
+            while True:
+                choice = input("Enter the number of your choice: 1 for play card, 2 for give information\n")
+                try :
+                    choice = int(choice)
+                    break
+                except:
+                    print("Enter a valid number")
+                
+                # play card  
+                if choice == 1:
+                    # tell server to play card
+                    self.socket.send(f"PLAY CARD".encode())
+                    
+                    card_choice = input("Enter the number of the card you want to play\n")
+                    while True:
+                        try:
+                            card_choice = int(card_choice)
+                            break
+                        except:
+                            print("Enter a valid number for card that you want to play")
+                    card_played = self.hand[card_choice]
+                    card_played.played = True
+                    self.hand.pop(card_choice)   # remove the card from hand
+                    self.socket.send(f"PLAY CARD {card_choice}".encode())
+                
+                # give information      
+                elif choice == 2:
+                    # tell server to give information
+                    self.socket.send("GIVE INFORMATION".encode())  
+                    other_players =[p for p in shared_memory["players_id"] if p != self.id]
+                    
+                    player_choice = input(f"Enter the number of the player among {other_players} you want to give information to \n")
+                    while True:
+                        try:
+                            player_choice = int(player_choice)
+                            break
+                        except:
+                            print("Enter a valid number for player that you want to give information to")
+                    
+                    # tell server which player to give information to
+                    self.socket.send(f"GIVE INFORMATION {player_choice}".encode())
+                    player_card = self.socket.recv(1024).decode()
+                    print(player_card)    # print all the cards of the player
+                    info_choice = input(f"Enter the type of the information you want to give, 1 for color, 2 for number\n")
+                    while True:
+                        try:
+                            info_choice = int(info_choice)
+                            break
+                        except:
+                            print("Enter a valid number for type of information")
+                    
+                    # choose to give color information
+                    if info_choice == 1:
+                        color = input("Enter the color you want to give information about\n")
+                        while True:
+                            if color in (card.color for card in player_card):
+                                break
+                            else:
+                                print("Enter a valid color")
+                        cards_position = [i for i, card in enumerate(player_card) if card.color == color]
+                        # tell player the position of the cards with the color
+                        msg_queue.send(f"Position of {color} cards are {cards_position}", type = 1)  
+                    
+                    # choose to give number information
+                    elif info_choice == 2:
+                        number = input("Enter the number you want to give information about\n")
+                        while True:
+                            if number in (card.number for card in player_card):
+                                break
+                            else:
+                                print("Enter a valid number")
+                        cards_position = [i for i, card in enumerate(player_card) if card.number == number]
+                        msg_queue.send(f"Position of {number} cards are {cards_position}", type = 1)
+                
+            game.self_lock.release()
+        
+        self.socket.close()   
+    
+    
+    
+    
+    
 
-        game.self_lock.acquire()
-        while True:
-            choice = input("Enter the number of your choice: 1 for play card, 2 for give information\n")
-            try :
-                choice = int(choice)
-                break
-            except:
-                print("Enter a valid number")
-            
-            if choice == 1:
-                card_choice = input("Enter the number of the card you want to play\n")
-                while True:
-                    try:
-                        card_choice = int(card_choice)
-                        break
-                    except:
-                        print("Enter a valid number for card that you want to play")
-                card_played = self.hand[card_choice]
-                card_played.played = True
-                self.hand.pop(card_choice)  # remove the card from hand
-                self.socket.send(f"PLAY CARD".encode())
-                self.socket.send(f"PLAY CARD {card_choice}".encode())
-                    
-            elif choice == 2:
-                self.socket.send("GIVE INFORMATION".encode())
-                other_players =[p for p in shared_memory["players"] if p != self.id]
-                player_choice = input(f"Enter the number of the player among {other_players} you want to give information to \n")
-                while True:
-                    try:
-                        player_choice = int(player_choice)
-                        break
-                    except:
-                        print("Enter a valid number for player that you want to give information to")
-                
-                message_out = 
-                
-                
-                print(cards_info)
-                info_choice = input(f"Enter the type of the information you want to give, 1 for color, 2 for number\n")
-                while True:
-                    try:
-                        info_choice = int(info_choice)
-                        break
-                    except:
-                        print("Enter a valid number for type of information")
-                    
-                    
-                    
-                    
-                    
-                
-                
-
-
-                
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
-        game.self_lock.release()
-            
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
 class card:
     def __init__(self, color, number):
         self.color = color
