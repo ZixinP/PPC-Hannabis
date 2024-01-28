@@ -1,12 +1,13 @@
 import multiprocessing as mp
-# import threading
+from queue import Queue
 import sysv_ipc
 # import struct
 import signal
 
-class Game:
-    color = ['red', 'blue', 'green', 'yellow', 'white'] 
-    key = 111
+color = ['red', 'blue', 'green', 'yellow', 'white'] 
+key = 111
+
+class Game:   
     def __init__(self, players, color,key):
         self.cards = self.init_cards(color)
         self.players = players
@@ -19,7 +20,7 @@ class Game:
         self.discards = []
         self.signal = False
         self.win= False
-        self.msg_queue = sysv_ipc.MessageQueue(key, sysv_ipc.IPC_CREAT)
+        self.queue_id = key
     
     # initialize the cards in the deck   
     def init_cards(self,color):
@@ -36,16 +37,29 @@ class Game:
             self.suits[c] = 0   # initialize the number of cards played for each suit
         return desk_cards
             
-    def distribute_cards(self):
+    def distribute_cards(self,shared_memory):
         for p in self.players:
             for i in range(0,5):
-                p.hand.append(self.draw_card())
+                p.hand[i] = shared_memory["cards"].pop()
+                '''
+                try:
+                    p.hand[i] = shared_memory["cards"].pop()
+                except:
+                    self.feedback(p.id, " Error in distributing cards from shared memory\n")   
+                    p.hand[i] = self.cards.pop()  
+                '''
 
         
     def draw_card(self,player,shared_memory):
         if len(shared_memory["cards"]) > 0:
-            player.hand.append(shared_memory["cards"].pop())   
- 
+            player.hand[len(player.hand)] = shared_memory["cards"].pop()
+            '''
+            try:
+                player.hand[len(player.hand)] = shared_memory["cards"].pop()
+            except:
+                self.feedback(player.id, " Error in drawing cards from shared memory\n")   
+                player.hand[len(player.hand)] = self.cards.pop()
+            '''
         else:
             self.feedback(player.id, "No more cards in the deck\n")
         
@@ -55,29 +69,31 @@ class Game:
             if p.id == id:
                 p.socket.send(message.encode())    
 
-    
+    # update the game status from shared memory to local memory
     def update_game(self, shared_memory):
-        shared_memory["tokens"] = self.tokens
-        shared_memory["fuses"] = self.fuses
-        shared_memory["discards"] = self.discards
-        shared_memory["suits"] = self.suits
-        shared_memory["cards"] = self.cards
+        self.cards = shared_memory["cards"]
+        self.discards = shared_memory["discards"]
+        self.suits = shared_memory["suits"]
+        self.fuses = shared_memory["fuses"]
+        self.tokens = shared_memory["tokens"]
 
     
     #check if game is over
     def check_end(self, shared_memory):
-        FLAG = False
+        FLAG = True
         if shared_memory["fuses"] == 0:
             self.signal = True
             self.win = False
             return
-        for s in shared_memory["suits"]:
-            if s.value == 5:
-                FLAG = True
-        if FLAG:
-            self.signal = True
-            self.win = True
-        return
+        else:
+            for s in shared_memory["suits"]:
+                if s.value !=5:
+                    FLAG = False
+            if FLAG:
+                self.signal = True
+                self.win = True
+                return
+    
     
     # notify players the game ends
     def end_game(self):
@@ -94,14 +110,13 @@ class Game:
         playable = False
         # check if card is playable
         if card.number == shared_memory["suits"][card.color] + 1:
-            self.suits[card.color] += 1
+            shared_memory["suits"][card.color] += 1
             card.played = True
             playable = True
         # if not, discard the card
         else: 
             shared_memory["fuses"] -= 1
             shared_memory["discards"].append(card)      
-            self.update_game(shared_memory) 
              
         if playable:
             self.feedback(self.players[self.turn].id, "You successfully played a " + card.color + " " + str(card.number)+"\n")
@@ -111,7 +126,6 @@ class Game:
                 for p in self.players:
                     self.feedback(p.id, "Suit %s completed\n" % card.color)
                     self.feedback(p.id, "You received a token\n") 
-            self.update_game(shared_memory)
                 
         # if card is not playable, lose a fuse       
         else:
@@ -120,11 +134,12 @@ class Game:
             for p in self.player:
                 self.feedback(p.id, f"only {self.fuses} fuses left\n")
         
-
+    # create a shared memory for all players and start all players' processes
     def set_up_players(self):  
         with mp.Manager() as manager:
             # create a shared memory for all players, in form of dictionary
             shared_memory = manager.dict()
+            shared_memory["queue_id"] = self.queue_id
             shared_memory["tokens"] = self.tokens
             shared_memory["fuses"] = self.fuses
             shared_memory["discards"] = self.discards
@@ -133,12 +148,13 @@ class Game:
             # collect all players' id
             list_players_id = [p.id for p in self.players]
             shared_memory["players_id"] = list_players_id
+            shared_memory["player_cards"] = {[p.id]:p.hand for p in self.players}
             
-            processes = [mp.Process(target=p.play, args=(self, shared_memory,self.msg_queue)) for p in self.players]
+            processes = [mp.Process(target=p.play, args=(self, shared_memory,pipe_commu=mp.Pipe())) for p in self.players]
             for p in processes:
                 p.start()
-            return shared_memory, processes
-    
+            
+            
     
     
     # start the game        
@@ -146,9 +162,8 @@ class Game:
         self.distribute_cards() 
         shared_memory, processes = self.set_up_players()
          
-        signal.signal(signal.SIGINT, self.signal_handler)
-        try:
-            while not self.signal:
+
+        while not self.signal:
                 with self.self_lock:
                     self.feedback(self.players[self.turn].id, "Your turn\n")
                     action = self.players[self.turn].socket.recv(1024).decode()
@@ -166,20 +181,12 @@ class Game:
                     self.feedback(self.players[self.turn].id, "Your turn is over\n")         
                     self.turn = (self.turn + 1) % len(self.players)   # next player's turn
                     self.check_end()
-    
-            self.end_game()
-            for p in processes:
-                p.join()
+                pass
+        self.end_game()
+        for p in processes:
+            p.join()
         
-        except KeyboardInterrupt:
-            print("Game interrupted")
-            signal_handler(siganl.SIGINT, None)
-        
-        return
-    
-    def signal_handler(self, sig, frame):
-        self.signal = True
-        return
+
 
 
 
@@ -189,12 +196,25 @@ class Player:
     def __init__(self, id, socket):
         self.id = id
         self.socket = socket
-        self.hand = []
+        self.hand = {}
+        self.game_over = False
+        
+    def recv_messages(self, queue):
+        while True:
+            message = self.socket.recv(1024).decode()
+            if message == "GAME OVER":
+                self.game_over = True
+                break
+            queue.put(message)
         
     def play(self, game, shared_memory, msg_queue):
-        message = self.socket.recv(1024).decode()
-        while message != "GAME OVER":   
-            while message != "Your turn\n":
+        queue_in = Queue()
+        recv_process = mp.Process(target=self.recv_messages, args=(queue_in,))
+        recv_process.start()
+        
+        while not self.game_over:
+            message = queue_in.get()
+            while message != "Your turn":
                 while message != "RECEIVE INFORMATION":
                     print(message)
                 
@@ -280,15 +300,69 @@ class Player:
                 
             game.self_lock.release()
         
+        result = self.socket.recv(1024).decode()
+        print(message)
+        print(result)
+        recv_thread.join()
         self.socket.close()   
     
+        # the action of playing a card
+    def play_card(self, card, shared_memory):
+        
+        playable = False
+        # check if card is playable
+        if card.number == shared_memory["suits"][card.color] + 1:
+            shared_memory["suits"][card.color] += 1
+            card.played = True
+            playable = True
+        # if not, discard the card
+        else: 
+            shared_memory["fuses"] -= 1
+            shared_memory["discards"].append(card)      
+             
+        if playable:
+            self.feedback(self.players[self.turn].id, "You successfully played a " + card.color + " " + str(card.number)+"\n")
+            # if card is 5, add a token
+            if card.number == 5:
+                self.tokens += 1
+                for p in self.players:
+                    self.feedback(p.id, "Suit %s completed\n" % card.color)
+                    self.feedback(p.id, "You received a token\n") 
+                
+        # if card is not playable, lose a fuse       
+        else:
+            self.feedback(self.players[self.turn].id, f"You misplayed card {card.color} {str(card.number)}\n")
+            self.feedback(self.players[self.turn].id, "You lost a fuse\n")
+            for p in self.player:
+                self.feedback(p.id, f"only {self.fuses} fuses left\n") 
     
     
-    
-    
-
 class card:
     def __init__(self, color, number):
         self.color = color
         self.number = number
         self.played = False
+
+# create a message queue between players with a  
+class CountingMessageQueue:
+    def __init__(self, key):
+        self.queue = sysv_ipc.MessageQueue(key, sysv_ipc.IPC_CREAT)
+        self.lock = threading.Lock()
+        self.counter = 0
+
+    def send(self, message):
+        self.queue.send(message)
+
+    def receive(self):
+        with self.lock:
+            message, _ = self.queue.receive()
+            self.counter += 1
+            return message
+
+    def delete_if_all_received(self, num_processes):
+        with self.lock:
+            if self.counter >= num_processes:
+                self.queue.remove()
+                print("Message deleted.")
+
+
