@@ -116,8 +116,6 @@ class Game:
         return shared_memory, processes, pipes
             
             
-    
-    
     # start the game        
     def start_game(self):
         self.distribute_cards() 
@@ -135,6 +133,7 @@ class Game:
                 print(action_player)
                 
                 end_turn = pipe_turn.recv()
+                self.update_game(shared_memory)    # update the game status from shared memory to local memory
                 self.turn = (self.turn + 1) % len(self.players)   # next player's turn
                 self.check_end()
                 pass
@@ -235,6 +234,10 @@ class Player:
         self.send_sock_msg("GAME OVER")
         result = queue_pipe.get()
         self.send_sock_msg(result)
+        sock_recv_proc.join()
+        pipe_recv_proc.join()
+        msg_queue_recv_proc.join()
+        sys.exit()
 
          
     
