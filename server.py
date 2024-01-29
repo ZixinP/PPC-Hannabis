@@ -33,5 +33,6 @@ def main():
                     games.append(Game)
                     players = []
                     
-                    
+if __name__ == "__main__":
+    main()
                 
