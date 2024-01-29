@@ -33,11 +33,9 @@ def main():
     client_socket.connect(server_socket)
     print("Connected to server")
 
-    
     self_action = []
     other_action = []
     pipe = mp.Pipe()
-    recv_queue = mp.process(target=recv_msg, args=(queue,other_action))
     recv_socket = mp.process(target=recv_socket, args=(server_socket, self_action, pipe))
 
     while True:
@@ -53,9 +51,12 @@ def main():
                 action_notice = "PLAY CARD"
                 server_socket.send(action_notice.encode())
                         
-                suits = server_socket.recv(1024).decode()
-                print(f"suits: {suits}")
-                card = int(input("Please enter the card you want to play, from 0 to 4: "))
+                suits = pipe.recv()
+                print(f"suits: {suits}\n")
+                cards_in_hand = pipe.recv()
+                card = int(input(f"Please enter the card you want to play in {cards_in_hand}: "))
+                while card not in cards_in_hand:
+                    card = int(input(f"Please enter the card you want to play in {cards_in_hand}: "))
                 server_socket.send(card.encode())
                         
                 result = pipe.recv()
@@ -82,12 +83,12 @@ def main():
                 while info_type != 1 and info_type != 2:
                     info_type = int(input("Please enter the information type: "))
                 
+                server_socket.send(info_type.encode())
                 # choose to give color information       
                 if info_type == 1:
                     color_choice = str(input("Please enter the color: "))
                     while color_choice not in (card.color for card in cards_recv):
                         color_choice = str(input("Please enter the color: "))
-                    cards_choice = [index for index, card in enumerate(cards_recv) if card.color == color_choice]
                     server_socket.send(color_choice.encode())
                     self_action.append([action_notice, player, color_choice, cards_choice])
                     
@@ -96,14 +97,11 @@ def main():
                     number_choice = int(input("Please enter the number: "))
                     while number_choice not in (card.number for card in cards_recv):
                         number_choice = int(input("Please enter the number: "))
-                    cards_choice = [index for index, card in enumerate(cards_recv) if card.number == number_choice]
                     server_socket.send(number_choice.encode())
                     self_action.append([action_notice, player, number_choice, cards_choice])
-                
-            end_turn = "END TURN"
-            server_socket.send(end_turn.encode())
+
         
-        elif message == "INFORMATION":
+        elif message == "INFORMATION RECEIVED":
             print("You receive information from another player\n")
             information = pipe.recv()
             print(f"{information}")
@@ -114,7 +112,11 @@ def main():
             final_result = pipe.recv()
             print(f"{final_result}")
             break
-                                         
+        
+        else:
+            print("Invalid message: {message}")
+            
+    recv_socket.join()                                    
     client_socket.close()
 
 if __name__ == "__main__":
