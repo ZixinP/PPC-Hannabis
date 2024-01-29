@@ -1,7 +1,7 @@
 import multiprocessing as mp
 from queue import Queue
 import sysv_ipc
-# import struct
+import struct
 import signal
 
 color = ['red', 'blue', 'green', 'yellow', 'white'] 
@@ -150,7 +150,7 @@ class Game:
             shared_memory["players_id"] = list_players_id
             shared_memory["player_cards"] = {[p.id]:p.hand for p in self.players}
             
-            processes = [mp.Process(target=p.play, args=(self, shared_memory,pipe_commu=mp.Pipe())) for p in self.players]
+            processes = [mp.Process(target=p.play, args=(self, shared_memory)) for p in self.players]
             for p in processes:
                 p.start()
             
@@ -347,22 +347,23 @@ class card:
 class CountingMessageQueue:
     def __init__(self, key):
         self.queue = sysv_ipc.MessageQueue(key, sysv_ipc.IPC_CREAT)
-        self.lock = threading.Lock()
+        self.lock = mp.Lock()
         self.counter = 0
 
-    def send(self, message):
-        self.queue.send(message)
+    def send(self, message, type):
+        self.queue.send(struct.pack('!I', type) + message)
 
     def receive(self):
         with self.lock:
             message, _ = self.queue.receive()
+            msg_type = struct.unpack('!I', message[:4])[0]
+            msg_data = message[4:]
             self.counter += 1
-            return message
+            return msg_type, msg_data
 
     def delete_if_all_received(self, num_processes):
         with self.lock:
             if self.counter >= num_processes:
                 self.queue.remove()
                 print("Message deleted.")
-
 
