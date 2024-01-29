@@ -22,26 +22,20 @@
         通过socket发送
         收到打出的卡牌，结果，列表加入type=play card，位置，结果
         socket发送结束回合
-        
+收到information received：
+    打印信息
+收到game over
+    打印结果
+    子进程结束
+    socket断开
 
 
 
 玩家子进程：
 参数为shared memory，和父进程的pipe，msg queue的key
 创建一个process，一直接受pipe消息
-# msg queue带有锁和计数器，每次只能一个人查看，结束后加一，检查计数器是否到上限
-
-#MSG_TYPE = 
-# 发送消息
-def send_message(msg_type, message):
-    mq.send(struct.pack("!I", msg_type) + message)
-# 接收消息
-def receive_message():
-    message, _ = mq.receive()
-    msg_type = struct.unpack("!I", message[:4])[0]
-    message_data = message[4:]
-    return msg_type, message_data
-
+创建一个process，一直接受socket消息
+创建一个process，一直接受msg queue消息
 
 在pipe收到your turn后，shared memory的lock acquire，然后开始执行play。
     发送选择
@@ -50,24 +44,24 @@ def receive_message():
         收到客户端的选择
         发送玩家卡牌  （shared memory提取
         收到客户端的选择
-        msg queue发送type=id的信息
-        pipe发送通知，让所有process接受msg queue信息
-        收到客户端结束回合
-        结束回合，lock release
+        提取卡片位置
+        token -1
     如果play card：
         发送所有suits的现在数字
         收到客户端选择的位置，提取卡牌，验证是否可行，和相应后续
         通过socket发送打出的牌，以及结果
-        msg queue的lock acquire，发送type 1信息，lock release
-    pipe发送通知，让所有process接受msg queue信息
-    收到客户端结束回合
-    结束回合，lock release 
 
-pipe接受到recv mes时，mag queue的lock acquire，接受，加一，release
+    msg queue发送type=id的信息    
+    结束回合，lock release 
+    发送给主进程，回合结束
+
+msg queue收到消息都通过socket发给客户端
 
 pipe接受到game over，socket发送game over和最终结果，break结束进程
     
 
+
+（# msg queue带有锁和计数器，每次只能一个人查看，结束后加一，检查计数器是否到上限）
         
         
                   
