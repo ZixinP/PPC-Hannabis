@@ -50,7 +50,7 @@ def receive_message():
         收到客户端的选择
         发送玩家卡牌  （shared memory提取
         收到客户端的选择
-        msg queue的lock acquire，发送type为1的信息，lock release
+        msg queue的lock acquire，发送type为2的信息，lock release
         pipe发送通知，让所有process接受msg queue信息
         收到客户端结束回合
         结束回合，lock release
@@ -58,7 +58,7 @@ def receive_message():
         发送所有suits的现在数字
         收到客户端选择的位置，提取卡牌，验证是否可行，和相应后续
         通过socket发送打出的牌，以及结果
-        msg queue的lock acquire，发送type 2信息，lock release
+        msg queue的lock acquire，发送type 1信息，lock release
     pipe发送通知，让所有process接受msg queue信息
     收到客户端结束回合
     结束回合，lock release 
