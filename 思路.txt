@@ -1,9 +1,8 @@
 客户端终端：
 每个客户端终端通过ssh打开一个client.py.
-里面自动让客户端连接server的套接字，并受到msg_queue的key。
-# msg queue带有锁和计数器，每次只能一个人查看，结束后加一，检查计数器是否到上限
-创建一个process，一直接受msg queue消息，加入到列表中
 创建一个列表，每次保存每回合自己的动作（type ，...）
+创建一个列表，保存每回合其他玩家的动作
+创建一个process，一直接受socket信息
 在收到your turn的时候，开始输入
     选择give info后，通过socket通知
     收到所有玩家id，提供选择
@@ -13,14 +12,16 @@
         玩家输入选择
             数字：检索所有value中数字相同的，返回位置，通过socket发送消息
             颜色：检索所有value中颜色一样的，返回位置，通过socket发送消息
-        通过msg queue发送位置
+        通过socket发送位置
         在列表中加入指定动作选择（type=give info），玩家id，选择，卡牌位置
         通过socket发送结束回合
-    选择play card，提供选择1到5位置，print每个suit上的数字，通过socket通知选择
+    选择play card：
+        通过socket通知
+        socket返回每个suit的数字，提供0-4位置选择
         玩家输入选择的位置
         通过socket发送
         收到打出的卡牌，结果，列表加入type=play card，位置，结果
-        通过msg queue发送打出的卡牌，结果
+        socket发送结束回合
         
 
 
@@ -28,21 +29,43 @@
 玩家子进程：
 参数为shared memory，和父进程的pipe，msg queue的key
 创建一个process，一直接受pipe消息
-在pipe收到your turn后，lock acquire，然后开始执行play。
+# msg queue带有锁和计数器，每次只能一个人查看，结束后加一，检查计数器是否到上限
+
+#MSG_TYPE = 
+# 发送消息
+def send_message(msg_type, message):
+    mq.send(struct.pack("!I", msg_type) + message)
+# 接收消息
+def receive_message():
+    message, _ = mq.receive()
+    msg_type = struct.unpack("!I", message[:4])[0]
+    message_data = message[4:]
+    return msg_type, message_data
+
+
+在pipe收到your turn后，shared memory的lock acquire，然后开始执行play。
     发送选择
     收到客户端的选择
     如果give info：发送玩家id   （shared memory提取
         收到客户端的选择
         发送玩家卡牌  （shared memory提取
         收到客户端的选择
-        收到客户端结束消息
+        msg queue的lock acquire，发送type为1的信息，lock release
+        pipe发送通知，让所有process接受msg queue信息
+        收到客户端结束回合
         结束回合，lock release
     如果play card：
+        发送所有suits的现在数字
         收到客户端选择的位置，提取卡牌，验证是否可行，和相应后续
         通过socket发送打出的牌，以及结果
-        结束回合，lock release
-        检查游戏是否结束
+        msg queue的lock acquire，发送type 2信息，lock release
+    pipe发送通知，让所有process接受msg queue信息
+    收到客户端结束回合
+    结束回合，lock release 
 
+pipe接受到recv mes时，mag queue的lock acquire，接受，加一，release
+
+pipe接受到game over，socket发送game over和最终结果，break结束进程
     
 
         
