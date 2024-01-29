@@ -114,7 +114,7 @@ def main():
             break
         
         else:
-            print("Invalid message: {message}")
+            print(message)
             
     recv_socket.join()                                    
     client_socket.close()

@@ -194,6 +194,8 @@ class Player:
     
     # process for each player
     def play(self, game, shared_memory, msg_queue, pipe):
+        self.send_sock_msg("Welcome to Hanabi!\n")
+        
         # create a queue to receive message from server through pipe, another queue to receiver message from player's terminal through socket
         queue_sock = Queue()
         queue_pipe = Queue()
