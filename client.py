@@ -62,7 +62,6 @@ def main():
                 result = pipe.recv()
                 print(f"{result}")
                 self_action.append([action_notice, card, result])
-                queue.send(f"{result}".encode())
                 break
                     
             elif action ==2:
@@ -90,7 +89,7 @@ def main():
                     while color_choice not in (card.color for card in cards_recv):
                         color_choice = str(input("Please enter the color: "))
                     server_socket.send(color_choice.encode())
-                    self_action.append([action_notice, player, color_choice, cards_choice])
+                    self_action.append([action_notice, player, color_choice])
                     
                 # choose to give number information           
                 elif info_type == 2:
@@ -98,7 +97,7 @@ def main():
                     while number_choice not in (card.number for card in cards_recv):
                         number_choice = int(input("Please enter the number: "))
                     server_socket.send(number_choice.encode())
-                    self_action.append([action_notice, player, number_choice, cards_choice])
+                    self_action.append([action_notice, player, number_choice])
 
         
         elif message == "INFORMATION RECEIVED":

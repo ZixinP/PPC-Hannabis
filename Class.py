@@ -2,7 +2,7 @@ import multiprocessing as mp
 from queue import Queue
 import sysv_ipc
 import struct
-import signal
+# import signal
 
 color = ['red', 'blue', 'green', 'yellow', 'white'] 
 key = 111
@@ -113,13 +113,13 @@ class Game:
             for process in processes:
                 process.start()
         
-        return shared_memory, processes, pipes
+        return shared_memory, processes, pipes, msg_queue
             
             
     # start the game        
     def start_game(self):
         self.distribute_cards() 
-        shared_memory, processes, pipes = self.set_up_players()
+        shared_memory, processes, pipes, msg_queue = self.set_up_players()
 
         while not self.signal:
             with self.self_lock:
@@ -223,11 +223,11 @@ class Player:
                     self.send_sock_msg(f"You have {tokens_left} tokens left and {fuses_left} fuses left\n")
                     action = queue_sock.get()
                     # play card  
-                    if choice == 1:
-                        self.play_card(self, shared_memory,game, msg_queue,pipe)
+                    if  action == 1:
+                        self.play_card(self, shared_memory,game, msg_queue,pipe, queue_sock)
                     # give information      
-                    elif choice == 2:
-                        self.give_information(self, shared_memory, game, msg_queue, pipe)
+                    elif action == 2:
+                        self.give_information(self, shared_memory, game, msg_queue, pipe, queue_sock)
                     # end turn
                     game.self_lock.release()
                     
@@ -244,7 +244,7 @@ class Player:
          
     
     # the action of playing a card
-    def play_card(self, shared_memory, game, msg_queue, pipe):
+    def play_card(self, shared_memory, msg_queue, pipe, queue_sock):
         self.send_pipe_msg(pipe, "PLAY CARD")
         
         playable = False
@@ -283,7 +283,7 @@ class Player:
         self.draw_card(shared_memory)
     
     # the action of giving information to another player
-    def give_information(self, shared_memory, game, msg_queue, pipe):
+    def give_information(self, shared_memory, game, msg_queue, pipe, queue_sock):
         self.send_pipe_msg(pipe, "GIVE INFORMATION")
         players_id = shared_memory["players_id"]
         self.send_sock_msg(f"{players_id}\n")
