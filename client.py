@@ -12,7 +12,7 @@ def recv_msg(queue, other_action):
         other_action.append(message.decode())
 '''       
 
-def revc_socket(server_socket, self_action, pipe):
+def revc_socket(server_socket, pipe):
     while True:
         message = server_socket.recv(1024).decode()
         if message != "GAME OVER":
@@ -36,7 +36,7 @@ def main():
     self_action = []
     other_action = []
     par_conn, child_conn = mp.Pipe()
-    recv_socket = mp.process(target=recv_socket, args=(server_socket, self_action, child_conn))
+    recv_socket = mp.Process(target=recv_socket, args=(server_socket, child_conn))
 
     while True:
         message = par_conn.recv()
