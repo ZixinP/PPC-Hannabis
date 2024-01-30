@@ -2,17 +2,9 @@ import socket
 import multiprocessing as mp
 
 
-'''
-def recv_msg(queue, other_action):
-    while True:
-        
-        message, _ = queue.receive()
-        print(f"Received message from message queue: {message.decode()}")
-        
-        other_action.append(message.decode())
-'''       
 
-def revc_socket(server_socket, pipe):
+
+def recv_socket(server_socket, pipe):
     while True:
         message = server_socket.recv(1024).decode()
         if message != "GAME OVER":
