@@ -35,11 +35,11 @@ def main():
 
     self_action = []
     other_action = []
-    pipe = mp.Pipe()
-    recv_socket = mp.process(target=recv_socket, args=(server_socket, self_action, pipe))
+    par_conn, child_conn = mp.Pipe()
+    recv_socket = mp.process(target=recv_socket, args=(server_socket, self_action, child_conn))
 
     while True:
-        message = pipe.recv()
+        message = par_conn.recv()
         if message == "Your turn":
             print("1 for play card, 2 for give information to another player\n")
             action = int(input("Please enter your action: "))
@@ -51,15 +51,15 @@ def main():
                 action_notice = "PLAY CARD"
                 server_socket.send(action_notice.encode())
                         
-                suits = pipe.recv()
+                suits = par_conn.recv()
                 print(f"suits: {suits}\n")
-                cards_in_hand = pipe.recv()
+                cards_in_hand = par_conn.recv()
                 card = int(input(f"Please enter the card you want to play in {cards_in_hand}: "))
                 while card not in cards_in_hand:
                     card = int(input(f"Please enter the card you want to play in {cards_in_hand}: "))
                 server_socket.send(card.encode())
                         
-                result = pipe.recv()
+                result = par_conn.recv()
                 print(f"{result}")
                 self_action.append([action_notice, card, result])
                 break
@@ -68,14 +68,14 @@ def main():
                 action_notice = "GIVE INFORMATION"
                 server_socket.send(action_notice.encode())
                         
-                players_id = pipe.recv()
+                players_id = par_conn.recv()
                 print(f"players_id: {players_id}")
                 player = int(input("Please enter the player you want to give information: "))
                 while player not in players_id:
                     player = int(input("Please enter the player you want to give information: "))
                 server_socket.send(player.encode())
                 
-                cards_recv = pipe.recv()
+                cards_recv = par_conn.recv()
                 print(f"player {player} has cards: {cards_recv}")
                 print("1 for give color information, 2 for give number information\n")
                 info_type = int(input("Please enter the information type: "))
@@ -102,13 +102,13 @@ def main():
         
         elif message == "INFORMATION RECEIVED":
             print("You receive information from another player\n")
-            information = pipe.recv()
+            information = par_conn.recv()
             print(f"{information}")
             other_action.append(information)
             
         elif message == "GAME OVER":
             print("GAME OVER")
-            final_result = pipe.recv()
+            final_result = par_conn.recv()
             print(f"{final_result}")
             break
         
