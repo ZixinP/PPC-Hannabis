@@ -2,11 +2,27 @@ import socket
 import select
 import Class as cl
 import time
+import multiprocessing as mp
+import signal
+import sys
 
 # color = ['red', 'blue', 'green', 'yellow', 'white'] 
 # key = 111
 
+def signal_handler(sig, frame):
+    print('Received signal to quit. Exiting...')
+    for game_proc in games:
+        game_proc.terminate()
+  
+    server_socket.close()
+    sys.exit(0)
+
 def main():
+    global server_socket
+    global games
+
+    signal.signal(signal.SIGINT, signal_handler)
+
     HOST = '127.0.0.1'
     PORT = 12345
     color = ['red', 'blue', 'green', 'yellow']
@@ -31,22 +47,18 @@ def main():
                 print('start time:', start_time)
                 start_game_condition = False
             elif len(players) == 3 and start_time is not None and (time.time() - start_time > 60) or len(players) == 4:
-              start_game_condition = True
+                start_game_condition = True
             else:
-              start_game_condition = False
+                start_game_condition = False
 
             if start_game_condition: 
-              Game = cl.Game(players, key)
-              Game.start_game(color)
-              games.append(Game)
-              players = []
-              start_time = None
+                Game = cl.Game(players, key)
+                game_proc = mp.Process(target=Game.start_game, args=(color,))
+                game_proc.start()
+                games.append(game_proc)
+                players = []
+                start_time = None
 
-        server_socket.close()
-        games = []
-        players = []
-        start_time = None
-            
 
 
 if __name__ == "__main__":
