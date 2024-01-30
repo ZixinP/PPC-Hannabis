@@ -2,7 +2,7 @@ import socket
 import multiprocessing as mp
 
 
-
+ 
 
 def recv_socket(server_socket, pipe):
     while True:
@@ -28,7 +28,8 @@ def main():
     self_action = []
     other_action = []
     par_conn, child_conn = mp.Pipe()
-    recv_socket = mp.Process(target=recv_socket, args=(server_socket, child_conn))
+    recv_socket_pro = mp.Process(target=recv_socket, args=(server_socket, child_conn))
+    recv_socket_pro.start()
 
     while True:
         message = par_conn.recv()
@@ -107,7 +108,7 @@ def main():
         else:
             print(message)
             
-    recv_socket.join()                                    
+    recv_socket_pro.join()                                  
     client_socket.close()
 
 if __name__ == "__main__":
