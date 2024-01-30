@@ -4,14 +4,14 @@ import multiprocessing as mp
 
  
 
-def recv_socket(server_socket, pipe):
+def recv_socket(client_socket, pipe):
     while True:
-        message = server_socket.recv(1024).decode()
+        message = client_socket.recv(1024).decode()
         if message != "GAME OVER":
             pipe.send(message)
             
         else:
-            final_result = server_socket.recv(1024).decode()
+            final_result = client_socket.recv(1024).decode()
             pipe.send(message)
             pipe.send(final_result)
             break
@@ -28,7 +28,7 @@ def main():
     self_action = []
     other_action = []
     par_conn, child_conn = mp.Pipe()
-    recv_socket_pro = mp.Process(target=recv_socket, args=(server_socket, child_conn))
+    recv_socket_pro = mp.Process(target=recv_socket, args=(client_socket, child_conn))
     recv_socket_pro.start()
 
     while True:
@@ -42,7 +42,7 @@ def main():
             action = int(action) 
             if action == 1:
                 action_notice = "PLAY CARD"
-                server_socket.send(action_notice.encode())
+                client_socket.send(action_notice.encode())
                         
                 suits = par_conn.recv()
                 print(f"suits: {suits}\n")
@@ -50,7 +50,7 @@ def main():
                 card = int(input(f"Please enter the card you want to play in {cards_in_hand}: "))
                 while card not in cards_in_hand:
                     card = int(input(f"Please enter the card you want to play in {cards_in_hand}: "))
-                server_socket.send(card.encode())
+                client_socket.send(card.encode())
                         
                 result = par_conn.recv()
                 print(f"{result}")
@@ -59,14 +59,14 @@ def main():
                     
             elif action ==2:
                 action_notice = "GIVE INFORMATION"
-                server_socket.send(action_notice.encode())
+                client_socket.send(action_notice.encode())
                         
                 players_id = par_conn.recv()
                 print(f"players_id: {players_id}")
                 player = int(input("Please enter the player you want to give information: "))
                 while player not in players_id:
                     player = int(input("Please enter the player you want to give information: "))
-                server_socket.send(player.encode())
+                client_socket.send(player.encode())
                 
                 cards_recv = par_conn.recv()
                 print(f"player {player} has cards: {cards_recv}")
@@ -75,13 +75,13 @@ def main():
                 while info_type != 1 and info_type != 2:
                     info_type = int(input("Please enter the information type: "))
                 
-                server_socket.send(info_type.encode())
+                client_socket.send(info_type.encode())
                 # choose to give color information       
                 if info_type == 1:
                     color_choice = str(input("Please enter the color: "))
                     while color_choice not in (card.color for card in cards_recv):
                         color_choice = str(input("Please enter the color: "))
-                    server_socket.send(color_choice.encode())
+                    client_socket.send(color_choice.encode())
                     self_action.append([action_notice, player, color_choice])
                     
                 # choose to give number information           
@@ -89,7 +89,7 @@ def main():
                     number_choice = int(input("Please enter the number: "))
                     while number_choice not in (card.number for card in cards_recv):
                         number_choice = int(input("Please enter the number: "))
-                    server_socket.send(number_choice.encode())
+                    client_socket.send(number_choice.encode())
                     self_action.append([action_notice, player, number_choice])
 
         
