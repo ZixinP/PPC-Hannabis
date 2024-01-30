@@ -42,7 +42,7 @@ class Game:
         shuffle(self.cards)
         for card in self.cards:
           print(f"card: {card.color} {card.number}")
-    
+
     def distribute_cards(self):
         # distribute cards to players
         for p in self.players:
@@ -78,12 +78,14 @@ class Game:
 
     # notify players the game ends
     def end_game(self,pipes):
-        for _, pipe in pipes:
+        for pipe_obj in pipes:
+            pipe = pipe_obj[1]
             pipe.send("GAME OVER")
             if self.win:
                 pipe.send("Congratulations! You win the game")
             else:
                 pipe.send("Sorry, you lose the game")
+            pipe.close()
 
 
     # create a shared memory for all players and start all players' processes
@@ -126,7 +128,7 @@ class Game:
 
         self.shuffle_cards()
         print("Cards shuffled")
-        
+
         self.distribute_cards()
         print("Cards distributed")
 
@@ -154,7 +156,8 @@ class Game:
         self.end_game(pipes)
         for p in processes:
             p.join()
-
+        shared_memory.clear()
+        msg_queue.remove()
         sys.exit(0)
 
 
@@ -186,7 +189,9 @@ class Player:
         while msg_server != "GAME OVER":
             queue.put(msg_server)
             msg_server = pipe.recv()
-        self.game_over = True
+        queue.put("GAME OVER")
+        result = pipe.recv()
+        queue.put(result)
 
     def send_pipe_msg(self, pipe, message):
         pipe.send(message)
@@ -232,7 +237,7 @@ class Player:
                  self.send_sock_msg(msg) 
 
             msg_server = queue_pipe.get()
-            while msg_server != "Your turn" :
+            while msg_server != "Your turn" and msg_server != "GAME OVER":
                 print(msg_server)
                 msg_server = queue_pipe.get()
 
@@ -258,15 +263,20 @@ class Player:
                 self.send_pipe_msg(pipe, "END TURN")
                 self.send_sock_msg("Your turn ended\n")
 
+            elif msg_server == "GAME OVER":
+                self.game_over = True
 
-
+        print("GAME OVER")
         self.send_sock_msg("GAME OVER")
         result = queue_pipe.get()
         self.send_sock_msg(result)
         sock_recv_proc.join()
         pipe_recv_proc.join()
         msg_queue_recv_proc.terminate()
-        sys.exit()
+        queue_msg_queue.close()
+        queue_sock.close()
+        queue_pipe.close()
+        pipe.close()
 
 
 
@@ -306,7 +316,11 @@ class Player:
             self.send_sock_msg(f"You displayed card {card_played.color} {card_played.number}\n")
             msg_queue_message = f"{self.id} displayed card {card_played.color} {card_played.number}\n"
 
-        self.send_msg_queue_msg(msg_queue_message, msg_queue)
+        try:
+            self.send_msg_queue_msg(msg_queue_message, msg_queue)
+        except:
+            print("error in sending message to message queue")
+            pass
         self.hand[card_played_index] = None
         self.draw_card(shared_memory)
 
@@ -327,19 +341,29 @@ class Player:
         # choose to give color information
         if type_info == "1":
             print("give color information")
-            
+
             color_choice = queue_sock.get()
             print(color_choice)
             cards_position = ",".join(str(i) for i, card in cards_player.items() if card.color == color_choice)
             print(cards_position)
-            self.send_msg_queue_msg(f"{player_choice} has {color_choice} cards at position {cards_position}", msg_queue)
+            try:
+                self.send_msg_queue_msg(f"{player_choice} has {color_choice} cards at position {cards_position}", msg_queue)
+            except:
+                print("error in sending message to message queue")
+                pass
+
         # choose to give number information   
         elif type_info == "2":
             number_choice = int(queue_sock.get())
             cards_position = ",".join(str(i) for i, card in cards_player.items() if card.number == number_choice)
             print(cards_position)
-            self.send_msg_queue_msg(f"{player_choice} has cards of {number_choice} at position {cards_position}", msg_queue)
+            try:
+                self.send_msg_queue_msg(f"{player_choice} has cards of {number_choice} at position {cards_position}", msg_queue)
+            except:
+                print("error in sending message to message queue")
+                pass
 
+        # lose a token after giving information
         shared_memory["tokens"] -= 1
 
 
@@ -364,6 +388,7 @@ class Card:
         self.color = color
         self.number = number
         self.played = False
+
 
 
 
